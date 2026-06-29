@@ -21,6 +21,7 @@ Observe the console. On each tool call you should be prompted with:
   - [n]o
   - n[e]ver (session)
   - never for this t[o]ol
+
 If you ever wish to modify remembered answers, they're stored in `tools.conf.json`. Modify and restart the script.
 
 All tool calls are logged into `Tool-call-[timestamp].md` in the directory from where `php index.php` was started.
