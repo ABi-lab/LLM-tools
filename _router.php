@@ -91,9 +91,11 @@ function respond(string $body): void {
     echo $body;
 }
 
-// Returns the structured tool catalog as a JSON array, always freshly built from INFO.md files.
-// Each entry: {name, description, parameters:{type,properties,required}}
+// Returns the structured tool catalog enveloped with instructions from INSTRUCTIONS.md.
+// Response: {catalog: [...], instructions: "..."}
+// catalog: array of tools, each {name, description, parameters:{type,properties,required}}
 // Compatible with Anthropic input_schema and OpenAI function.parameters shapes.
+// instructions: live text from INSTRUCTIONS.md, picked up on every request.
 function getToolsCatalogJson(): void {
     $tools = [];
     $files = glob(BASE_DIR . '/tools/*/INFO.md');
@@ -105,8 +107,20 @@ function getToolsCatalogJson(): void {
             if ($tool !== null) $tools[] = $tool;
         }
     }
+
+    // Fetch instructions from INSTRUCTIONS.md (live, refreshed on each request)
+    $instructionsFile = BASE_DIR . '/INSTRUCTIONS.md';
+    $instructions = (is_file($instructionsFile))
+        ? file_get_contents($instructionsFile)
+        : '';
+
+    $envelope = [
+        'catalog' => $tools,
+        'instructions' => $instructions,
+    ];
+
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($tools, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    echo json_encode($envelope, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
 // Parse a single INFO.md into a structured tool entry.

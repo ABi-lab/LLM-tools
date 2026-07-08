@@ -26,7 +26,7 @@ file_put_contents(BASE_DIR . '/_state.json', json_encode(['auto_on' => $autoOn])
 @unlink(PERM_RESP_FILE);
 
 echo "LLM Tool Service\n";
-echo "Listening on http://localhost:7001/\n";
+echo "Listening on http://0.0.0.0:7001/ (accessible from the network)\n";
 echo ($autoOn
     ? "Mode: auto-approve ON  (type 'auto off' to require permissions)\n"
     : "Mode: permission prompts ON  (type 'auto on' to auto-approve)\n");
@@ -36,7 +36,7 @@ echo "Press Ctrl+C to stop.\n\n";
 $php    = PHP_BINARY;
 $router = __DIR__ . DIRECTORY_SEPARATOR . '_router.php';
 $proc   = proc_open(
-    "\"$php\" -S localhost:7001 \"$router\"",
+    "\"$php\" -S 0.0.0.0:7001 \"$router\"",
     [0 => ['pipe', 'r'], 1 => STDOUT, 2 => STDERR],
     $pipes
 );
