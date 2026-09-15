@@ -91,11 +91,10 @@ function respond(string $body): void {
     echo $body;
 }
 
-// Returns the structured tool catalog enveloped with instructions from INSTRUCTIONS.md.
-// Response: {catalog: [...], instructions: "..."}
-// catalog: array of tools, each {name, description, parameters:{type,properties,required}}
+// Returns the structured tool catalog as a bare JSON array.
+// Response: [{name, description, parameters:{type,properties,required}}, ...]
 // Compatible with Anthropic input_schema and OpenAI function.parameters shapes.
-// instructions: live text from INSTRUCTIONS.md, picked up on every request.
+// (Prose instructions live at GET /INSTRUCTIONS.md — a separate request; not bundled here.)
 function getToolsCatalogJson(): void {
     $tools = [];
     $files = glob(BASE_DIR . '/tools/*/INFO.md');
@@ -108,19 +107,8 @@ function getToolsCatalogJson(): void {
         }
     }
 
-    // Fetch instructions from INSTRUCTIONS.md (live, refreshed on each request)
-    $instructionsFile = BASE_DIR . '/INSTRUCTIONS.md';
-    $instructions = (is_file($instructionsFile))
-        ? file_get_contents($instructionsFile)
-        : '';
-
-    $envelope = [
-        'catalog' => $tools,
-        'instructions' => $instructions,
-    ];
-
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($envelope, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    echo json_encode($tools, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
 // Parse a single INFO.md into a structured tool entry.
@@ -145,10 +133,18 @@ function parseToolInfo(string $md): ?array {
 
     $description = trim($sections['short description'] ?? $sections['long description'] ?? '');
 
-    // Parse input parameters section
-    $paramText  = $sections['input parameters'] ?? '';
+    // Parse input parameters section. Expected line format (see
+    // tools/new_tool_template/INFO.md and INSTRUCTIONS.md "Creating new tools"):
+    //   - **name** (type, required|optional[, default: X]): description
+    // type is one of string/number/boolean/array/object; the second token
+    // must be the literal word "required" or "optional" (not both — that's
+    // the old unedited template placeholder — and not neither).
+    $paramText = $sections['input parameters'] ?? '';
     // Some INFO.md files use literal \n instead of real newlines
-    $paramText  = str_replace('\n', "\n", $paramText);
+    $paramText = str_replace('\n', "\n", $paramText);
+
+    $validTypes = ['string', 'number', 'boolean', 'array', 'object'];
+    $lineRe     = '/^\*\*([A-Za-z0-9_]+)\*\*\s*\(\s*(' . implode('|', $validTypes) . ')\s*,\s*(required|optional)\s*(?:,\s*default:\s*([^)]*))?\)\s*:\s*(.*)$/i';
 
     $properties = [];
     $required   = [];
@@ -156,29 +152,32 @@ function parseToolInfo(string $md): ?array {
     foreach (explode("\n", $paramText) as $line) {
         $line = trim($line);
         if ($line === '' || $line[0] !== '-') continue;
-        $line = ltrim($line, '- ');
-        // Strip **bold** markers
-        $line = preg_replace('/\*\*([^*]+)\*\*/', '$1', $line);
+        $line = trim(ltrim($line, '- '));
 
-        if (str_contains($line, ':')) {
-            [$rawName, $desc] = explode(':', $line, 2);
-        } else {
-            // No colon — whole thing is the param name (e.g. old-style entries)
-            $rawName = $line;
-            $desc    = '';
+        if (!preg_match($lineRe, $line, $m)) {
+            error_log("parseToolInfo: malformed 'Input parameters' line in tool '$key', excluding tool from catalog: $line");
+            return null;
         }
 
-        // Normalise param name: trim, spaces → underscores (preserve original case)
-        $paramName = preg_replace('/\s+/', '_', trim($rawName));
-        if ($paramName === '') continue;
-
+        [, $paramName, $type, $reqOpt, $default, $desc] = $m;
+        $type = strtolower($type);
         $desc = trim($desc);
 
-        // Required if "required" appears and "optional" does not, or if standalone "Required." suffix
-        $isRequired = preg_match('/\brequired\b/i', $desc) && !preg_match('/\boptional\b/i', $desc);
+        $prop = ['type' => $type, 'description' => $desc];
+        if ($default !== '') {
+            $default = trim($default);
+            // Unwrap a quoted literal, e.g. default: '' or default: "x", to its raw value.
+            if (preg_match('/^([\'"])(.*)\1$/', $default, $qm)) $default = $qm[2];
+            $prop['default'] = match ($type) {
+                'number'  => is_numeric($default) ? $default + 0 : $default,
+                'boolean' => in_array(strtolower($default), ['true', '1'], true) ? true
+                           : (in_array(strtolower($default), ['false', '0'], true) ? false : $default),
+                default   => $default,
+            };
+        }
 
-        $properties[$paramName] = ['type' => 'string', 'description' => $desc];
-        if ($isRequired) $required[] = $paramName;
+        $properties[$paramName] = $prop;
+        if (strcasecmp($reqOpt, 'required') === 0) $required[] = $paramName;
     }
 
     return [
@@ -200,7 +199,13 @@ function getToolsIndex(): string {
         foreach ($files as $file) {
             if (str_contains($file, "new_tool_template"))
                 continue;
-            $parts[] = file_get_contents($file);
+            $content = file_get_contents($file);
+            // Skip tools whose INFO.md fails parseToolInfo() (malformed
+            // Input parameters section) — parseToolInfo() already logs why.
+            // A model reading raw prose here would otherwise be misled by
+            // the same malformed line that broke the JSON schema.
+            if (parseToolInfo($content) === null) continue;
+            $parts[] = $content;
         }
     }
     return $parts ? implode("\n\n---\n\n", $parts) : "No tools available.";

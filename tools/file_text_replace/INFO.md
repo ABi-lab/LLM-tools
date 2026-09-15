@@ -52,9 +52,10 @@ text_line9
 ```
 This search will correctly identify only 1 position where the content is to be replaced.
 ## Input parameters
-- path: path to a file to read (required)
-- search: which text to replace (required)
-- replace: new text content to replace the matched text with (optional, default: ''; no replace value removes the search text)
+- **path** (string, required): path to a file to read
+- **search** (string, required): which text to replace
+- **replace** (string, optional, default: ''): new text content to replace the matched text with (no replace value removes the search text)
+For optimal performance limit replace text to max 20 lines per call. This can avoid repeating large tool calls in case of problems
 ## Output
 Response describes the result of the action:
   - File was successfully modified.

@@ -8,6 +8,6 @@ Searches the web with Brave Search for the given query and returns the results p
 ## Long description
 URL-encodes the query, fetches https://search.brave.com/search?q=<encoded_query>, strips HTML and returns readable text with hyperlinks preserved. Brave Search is privacy-focused and bot-friendly.
 ## Input parameters
-- query: search query text (required)
+- **query** (string, required): search query text
 ## Output
 Plain text of the Brave search results page with links in Markdown format [text](url).
